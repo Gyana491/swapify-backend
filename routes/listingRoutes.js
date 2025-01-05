@@ -10,6 +10,7 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
             seller_id: req.userId
         });
 
+
         const savedListing = await listing.save();
         const populatedListing = await Listing.findById(savedListing._id).populate('seller_id', 'username email');
         
@@ -23,7 +24,7 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
     }
 });
 
-router.get('/listings', authMiddleware, async (req, res) => {
+router.get('/listings', async (req, res) => {
     try {
         const listings = await Listing.find().populate('seller_id', 'username email');
         res.status(200).json(listings);
