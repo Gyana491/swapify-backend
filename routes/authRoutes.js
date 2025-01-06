@@ -47,9 +47,25 @@ router.post('/register', async (req, res) => {
             address
         });
 
-        await user.save();
-        res.status(201).json({ message: 'User registered successfully.' });
-    } catch (error) {
+        const userData= await user.save();
+        const token = jwt.sign(
+            { 
+                id: userData._id,
+                email: userData.email 
+            }, 
+            process.env.JWT_SECRET
+        );
+        
+        res.status(201).json({ 
+            token,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                role: user.user_role
+            }})
+    }
+         catch (error) {
         console.error('Error during registration:', error);
         res.status(500).json({ message: 'Registration failed.' });
     }
@@ -76,10 +92,9 @@ router.post('/login', async (req, res) => {
         const token = jwt.sign(
             { 
                 id: user._id,
-                role: user.user_role 
+                email: user.email 
             }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: '1h' }
+            process.env.JWT_SECRET
         );
         
         res.json({ 
