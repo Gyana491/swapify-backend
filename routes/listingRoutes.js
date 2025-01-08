@@ -24,7 +24,7 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
     }
 });
 
-router.get('/listings',authMiddleware, async (req, res) => {
+router.get('/listings', async (req, res) => {
     try {
         const listings = await Listing.find().populate('seller_id', 'username email');
         res.status(200).json(listings);

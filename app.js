@@ -3,12 +3,18 @@ const express = require('express');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const listingRoutes = require('./routes/listingRoutes');
+const cors = require('cors');
 
 const app = express();
 
 // Connect to MongoDB
 connectDB();
 
+// enable cors
+app.use(cors({
+    origin: '*',
+    credentials: true
+}));
 
 app.use(express.json());
 

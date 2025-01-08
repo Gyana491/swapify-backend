@@ -81,7 +81,7 @@ router.post('/login', async (req, res) => {
     try {
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials.' });
+            return res.status(401).json({ message: 'No user found with this email.' });
         }
 
         const isValidPassword = await bcrypt.compare(user_password, user.user_password);
