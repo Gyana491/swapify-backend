@@ -126,20 +126,34 @@ router.get('/protected', authMiddleware, (req, res) => {
 });
 
 router.post('/verify-token',authMiddleware, async (req, res) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    const userId = req.userId;
-    const user = await User.findById(userId);
-    if (!token) return res.status(401).json({ message: 'No token provided.' });
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ message: 'No token provided.' });
+        }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(403).json({ message: 'Invalid token.' });
+        const userId = req.userId;
+        const user = await User.findById(userId);
         
-        res.status(200).json({ 
-            message: 'Token is valid.',
-            token,
-            user
+        jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+            if (err) {
+                return res.status(403).json({ message: 'Invalid token.' });
+            }
+            
+            res.status(200).json({ 
+                isLoggedIn: true,
+                message: 'Token is valid.',
+                token,
+                user
+            });
         });
-    });
+    } catch (error) {
+        console.error('Token verification error:', error);
+        res.status(500).json({
+            message: 'Token verification failed.',
+            isLoggedIn: false
+         });
+    }
 });
 
 module.exports = router;
