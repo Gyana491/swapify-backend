@@ -125,4 +125,21 @@ router.get('/protected', authMiddleware, (req, res) => {
     res.json({ message: 'You have access.', userId: req.userId });
 });
 
+router.post('/verify-token',authMiddleware, async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    const userId = req.userId;
+    const user = await User.findById(userId);
+    if (!token) return res.status(401).json({ message: 'No token provided.' });
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) return res.status(403).json({ message: 'Invalid token.' });
+        
+        res.status(200).json({ 
+            message: 'Token is valid.',
+            token,
+            user
+        });
+    });
+});
+
 module.exports = router;
