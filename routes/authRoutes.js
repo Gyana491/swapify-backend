@@ -137,7 +137,10 @@ router.post('/verify-token',authMiddleware, async (req, res) => {
         
         jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
             if (err) {
-                return res.status(403).json({ message: 'Invalid token.' });
+                return res.status(403).json({ 
+                    message: 'Invalid token.',
+                    isLoggedIn: false
+                });
             }
             
             res.status(200).json({ 
