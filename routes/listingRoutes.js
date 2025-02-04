@@ -26,16 +26,24 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
 
 router.get('/listings', async (req, res) => {
     try {
-        const listings = await Listing.find().populate('seller_id', 'username email');
+        const listings = await Listing.find({ deleted: { $ne: true } })
+            .populate('seller_id', 'username email')
+            .sort({ created_at: -1 }); // Sort by created_at in descending order (most recent first)
         res.status(200).json(listings);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching listings' });
     }
 });
 
-router.get('/listings/:slug', async (req, res) => {
+router.get('/listings/:id', async (req, res) => {
     try {
-        const listing = await Listing.findOne({ slug: req.params.slug });
+        const listing = await Listing.findOne({ 
+            _id: req.params.id,
+            deleted: { $ne: true }
+        }).populate('seller_id', 'username email');
+        if (!listing) {
+            return res.status(404).json({ message: 'Listing not found' });
+        }
         res.status(200).json(listing);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching listing' });
@@ -44,13 +52,35 @@ router.get('/listings/:slug', async (req, res) => {
 
 router.get('/my-listings', authMiddleware, async (req, res) => {
     try {
-        const listings = await Listing.find({ seller_id: req.userId });
+        const listings = await Listing.find({ 
+            seller_id: req.userId,
+            deleted: { $ne: true }
+        });
         res.status(200).json(listings);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching listings' });
     }
 });
 
+router.delete('/listings/:id', authMiddleware, async (req, res) => {
+    try {
+        const listing = await Listing.findById(req.params.id);
+        
+        if (!listing) {
+            return res.status(404).json({ message: 'Listing not found' });
+        }
+
+        if (listing.seller_id.toString() !== req.userId) {
+            return res.status(403).json({ message: 'Unauthorized to delete this listing' });
+        }
+
+        await Listing.findByIdAndUpdate(req.params.id, { deleted: true });
+        res.status(200).json({ message: 'Listing deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting listing:', error);
+        res.status(500).json({ message: 'Error deleting listing' });
+    }
+});
 
 module.exports = router;
 

@@ -12,7 +12,11 @@ const userSchema = new mongoose.Schema({
     city: { type: String },
     pincode: { type: String },
     address: { type: String },
-    created_at: { type: Date, default: Date.now }
+    created_at: { type: Date, default: Date.now },
+    last_token: {
+        type: String,
+        default: null
+    }
 });
 
 const User = mongoose.model('User', userSchema);

@@ -92,10 +92,13 @@ router.post('/login', async (req, res) => {
         const token = jwt.sign(
             { 
                 id: user._id,
-                email: user.email 
+                email: user.email,
+                iat: Math.floor(Date.now() / 1000)
             }, 
             process.env.JWT_SECRET
         );
+
+        await User.findByIdAndUpdate(user._id, { last_token: token });
         
         res.json({ 
             token,
@@ -125,7 +128,25 @@ router.get('/protected', authMiddleware, (req, res) => {
     res.json({ message: 'You have access.', userId: req.userId });
 });
 
-router.post('/verify-token',authMiddleware, async (req, res) => {
+router.get('/user/:id', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id, '-user_password');
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        res.status(200).json(user);
+    } catch (error) {
+        console.error('Error fetching user:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ message: 'Invalid user ID format' });
+        }
+        res.status(500).json({ message: 'Error fetching user details' });
+    }
+});
+
+router.post('/verify-token', authMiddleware, async (req, res) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
         if (!token) {
@@ -134,6 +155,13 @@ router.post('/verify-token',authMiddleware, async (req, res) => {
 
         const userId = req.userId;
         const user = await User.findById(userId);
+
+        if (user.last_token !== token) {
+            return res.status(403).json({ 
+                message: 'Token has been invalidated.',
+                isLoggedIn: false
+            });
+        }
         
         jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
             if (err) {
@@ -155,7 +183,72 @@ router.post('/verify-token',authMiddleware, async (req, res) => {
         res.status(500).json({
             message: 'Token verification failed.',
             isLoggedIn: false
-         });
+        });
+    }
+});
+
+router.post('/logout', authMiddleware, async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        
+        await User.findByIdAndUpdate(req.userId, { last_token: null });
+
+        res.status(200).json({ 
+            message: 'Logged out successfully',
+            isLoggedIn: false 
+        });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ 
+            message: 'Logout failed',
+            error: error.message 
+        });
+    }
+});
+
+router.put('/profile-setup', authMiddleware, async (req, res) => {
+    try {
+        const {
+            username,
+            phone_number,
+            country,
+            state,
+            city,
+            pincode,
+            address,
+            user_avatar
+        } = req.body;
+
+        const userId = req.userId;
+
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            {
+                $set: {
+                    username: username,
+                    phone_number: phone_number,
+                    country: country,
+                    state: state,
+                    city: city,
+                    pincode: pincode,
+                    address: address,
+                    user_avatar: user_avatar
+                }
+            },
+            { new: true, select: '-user_password' }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        res.status(200).json({
+            message: 'Profile updated successfully',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Profile setup error:', error);
+        res.status(500).json({ message: 'Profile setup failed.' });
     }
 });
 
