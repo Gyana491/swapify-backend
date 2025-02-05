@@ -82,5 +82,57 @@ router.delete('/listings/:id', authMiddleware, async (req, res) => {
     }
 });
 
+router.put('/listings/:id', authMiddleware, async (req, res) => {
+    try {
+        const listing = await Listing.findById(req.params.id);
+        
+        if (!listing) {
+            return res.status(404).json({ message: 'Listing not found' });
+        }
+
+        if (listing.seller_id.toString() !== req.userId) {
+            return res.status(403).json({ message: 'Unauthorized to update this listing' });
+        }
+
+        const updatedListing = await Listing.findByIdAndUpdate(
+            req.params.id,
+            { ...req.body },
+            { new: true }
+        ).populate('seller_id', 'username email');
+
+        res.status(200).json({ 
+            message: 'Listing updated successfully',
+            listing: updatedListing
+        });
+    } catch (error) {
+        console.error('Error updating listing:', error);
+        res.status(500).json({ message: 'Error updating listing' });
+    }
+});
+
+router.get('/search-listings', async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query) {
+            return res.status(400).json({ message: 'Search query is required' });
+        }
+
+        const listings = await Listing.find({
+            deleted: { $ne: true },
+            $or: [
+                { title: { $regex: query, $options: 'i' } },
+                { description: { $regex: query, $options: 'i' } }
+            ]
+        })
+        .populate('seller_id', 'username email')
+        .sort({ created_at: -1 });
+
+        res.status(200).json(listings);
+    } catch (error) {
+        console.error('Error searching listings:', error);
+        res.status(500).json({ message: 'Error searching listings' });
+    }
+});
+
 module.exports = router;
 
