@@ -3,12 +3,14 @@ const authMiddleware = require('../middlewares/authMiddleware');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Listing = require('../models/Listing');
 
 const router = express.Router();
 
 router.post('/register', async (req, res) => {
     const { 
-        username, 
+        username,
+        full_name,
         user_password,
         user_role,
         email,
@@ -21,20 +23,26 @@ router.post('/register', async (req, res) => {
         address 
     } = req.body;
     
-    if (!username || !user_password || !email) {
-        return res.status(400).json({ message: 'Username, password and email are required.' });
+    if (!username || !user_password || !email || !full_name) {
+        return res.status(400).json({ message: 'Username, full name, password and email are required.' });
     }
 
     try {
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
+        const existingUsername = await User.findOne({ username: username.toLowerCase() });
+        if (existingUsername) {
+            return res.status(409).json({ message: 'Username already taken.' });
+        }
+
+        const existingEmail = await User.findOne({ email });
+        if (existingEmail) {
             return res.status(409).json({ message: 'Email already exists.' });
         }
 
         const hashedPassword = await bcrypt.hash(user_password, 10);
         
         const user = new User({
-            username,
+            username: username.toLowerCase(),
+            full_name,
             user_password: hashedPassword,
             email,
             user_role,
@@ -47,7 +55,7 @@ router.post('/register', async (req, res) => {
             address
         });
 
-        const userData= await user.save();
+        const userData = await user.save();
         const token = jwt.sign(
             { 
                 id: userData._id,
@@ -56,6 +64,8 @@ router.post('/register', async (req, res) => {
             process.env.JWT_SECRET
         );
         
+        await User.findByIdAndUpdate(userData._id, { last_token: token });
+
         res.status(201).json({ 
             token,
             user: {
@@ -63,9 +73,9 @@ router.post('/register', async (req, res) => {
                 username: user.username,
                 email: user.email,
                 role: user.user_role
-            }})
-    }
-         catch (error) {
+            }
+        });
+    } catch (error) {
         console.error('Error during registration:', error);
         res.status(500).json({ message: 'Registration failed.' });
     }
@@ -249,6 +259,32 @@ router.put('/profile-setup', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Profile setup error:', error);
         res.status(500).json({ message: 'Profile setup failed.' });
+    }
+});
+
+router.get('/u/:username', async (req, res) => {
+    try {
+        const user = await User.findOne(
+            { username: req.params.username.toLowerCase() },
+            '-user_password -last_token'
+        );
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const listings = await Listing.find({ 
+            seller_id: user._id,
+            deleted: { $ne: true }
+        }).sort({ created_at: -1 });
+
+        res.status(200).json({
+            user,
+            listings
+        });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ message: 'Error fetching user profile' });
     }
 });
 

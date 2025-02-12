@@ -1,7 +1,15 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-    username: { type: String, required: true },
+    username: { 
+        type: String, 
+        required: true, 
+        unique: true,
+        lowercase: true,
+        trim: true,
+        match: [/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers and underscores']
+    },
+    full_name: { type: String, required: true },
     user_password: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     user_role: { type: String },

@@ -12,6 +12,8 @@ const listingSchema = new mongoose.Schema({
     state: { type: String },
     city: { type: String },
     pincode: { type: String },
+    latitude: { type: Number, required: true },
+    longitude: { type: Number, required: true },
     created_at: { type: Date, default: Date.now },
     deleted: { type: Boolean, default: false }
 });

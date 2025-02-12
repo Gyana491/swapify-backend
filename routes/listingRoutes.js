@@ -4,12 +4,22 @@ const Listing = require('../models/Listing');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 router.post('/create-listing', authMiddleware, async (req, res) => {
+    const { latitude, longitude, ...rest } = req.body;
+    
+    if (!latitude || !longitude) {
+        return res.status(400).json({ 
+            message: 'Location coordinates are required',
+            details: 'Please ensure location permissions are granted and coordinates are provided'
+        });
+    }
+
     try {
         const listing = new Listing({
-            ...req.body,
+            ...rest,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
             seller_id: req.userId
         });
-
 
         const savedListing = await listing.save();
         const populatedListing = await Listing.findById(savedListing._id).populate('seller_id', 'username email');
@@ -20,7 +30,11 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
         });
     } catch (error) {
         console.error('Error creating listing:', error);
-        res.status(500).json({ message: 'Error creating listing' });
+        res.status(500).json({ 
+            message: 'Error creating listing',
+            error: error.message,
+            details: error
+        });
     }
 });
 
