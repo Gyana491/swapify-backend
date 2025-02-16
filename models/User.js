@@ -16,7 +16,14 @@ const userSchema = new mongoose.Schema({
     last_token: {
         type: String,
         default: null
-    }
+    },
+    google_user_id: { type: String },
+    google_user_avatar: { type: String },
+    is_verified: { type: Boolean },
+    email_verified: { type: Boolean },
+    full_name: { type: String },
+    nickname: { type: String },
+    family_name: { type: String },
 });
 
 const User = mongoose.model('User', userSchema);

@@ -3,7 +3,9 @@ const authMiddleware = require('../middlewares/authMiddleware');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-
+const axios = require('axios');
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const router = express.Router();
 
 router.post('/register', async (req, res) => {
@@ -251,5 +253,85 @@ router.put('/profile-setup', authMiddleware, async (req, res) => {
         res.status(500).json({ message: 'Profile setup failed.' });
     }
 });
+
+// Redirect to Google OAuth
+router.get("/auth/google", (req, res) => {
+    const googleAuthURL = `https://accounts.google.com/o/oauth2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${process.env.GOOGLE_CALLBACK_URL}&response_type=code&scope=profile email`;
+    res.redirect(googleAuthURL);
+});
+
+// Handle Google OAuth Callback
+router.get("/auth/google/callback", async (req, res) => {
+    try {
+        const { code } = req.query;
+        
+        if (!code) {
+            return res.status(400).json({ message: 'Authorization code is missing' });
+        }
+
+        // Exchange code for access token
+        const tokenResponse = await axios.post(
+            "https://oauth2.googleapis.com/token",
+            {
+                client_id: process.env.GOOGLE_CLIENT_ID,
+                client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                redirect_uri: process.env.GOOGLE_CALLBACK_URL,
+                grant_type: "authorization_code",
+                code,
+            },
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+
+        const { access_token } = tokenResponse.data;
+
+        // Fetch user profile from Google API
+        const profileResponse = await axios.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+        const profile = await profileResponse.data;
+        
+        let user = await User.findOne({ email: profile.email });
+
+        if (!user) {
+            // Create new user from Google profile
+            user  = await User.create({
+                username: profile.name,
+                email: profile.email,
+                
+                full_name: profile.name,
+                nickname: profile.given_name,
+                family_name: profile.family_name,
+                google_user_id: profile.id,
+                google_user_avatar: profile.picture,
+                is_verified: profile.verified_email,
+                
+                user_password: await bcrypt.hash(Math.random().toString(36), 10), // Random secure password
+                user_role: 'user'
+            });
+        }
+        
+        const token = jwt.sign(
+            { 
+                id: user._id,
+                email: user.email
+            }, 
+            process.env.JWT_SECRET
+        );
+
+        await User.findByIdAndUpdate(user._id, { last_token: token });
+        res.redirect(`${process.env.FRONTEND_URL}/auth/callback/google?authToken=${token}`);
+        
+        return ;
+        
+    } catch (error) {
+        console.error("OAuth Error:", error.response?.data || error.message);
+        res.status(500).json({
+            message: "Authentication Failed",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 
 module.exports = router;
