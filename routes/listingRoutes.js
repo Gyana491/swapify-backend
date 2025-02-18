@@ -16,8 +16,10 @@ router.post('/create-listing', authMiddleware, async (req, res) => {
     try {
         const listing = new Listing({
             ...rest,
-            latitude: parseFloat(latitude),
-            longitude: parseFloat(longitude),
+            location: {
+                type: "Point",
+                coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            },
             seller_id: req.userId
         });
 
@@ -145,6 +147,44 @@ router.get('/search-listings', async (req, res) => {
     } catch (error) {
         console.error('Error searching listings:', error);
         res.status(500).json({ message: 'Error searching listings' });
+    }
+});
+
+router.get('/nearby-listings', async (req, res) => {
+    const { longitude, latitude, maxDistance = 15000 } = req.query; // Default 15km
+    
+    if (!longitude || !latitude) {
+        return res.status(400).json({ 
+            message: 'Longitude and latitude are required',
+            example: '/nearby-listings?longitude=76.8433&latitude=23.0719'
+        });
+    }
+
+    try {
+        const listings = await Listing.find({
+            deleted: { $ne: true },
+            location: {
+                $near: {
+                    $geometry: {
+                        type: "Point",
+                        coordinates: [
+                            parseFloat(longitude),
+                            parseFloat(latitude)
+                        ]
+                    },
+                    $maxDistance: parseInt(maxDistance)
+                }
+            }
+        })
+        .populate('seller_id', 'username email')
+        .sort({ created_at: -1 });
+        res.status(200).json(listings);
+    } catch (error) {
+        console.error('Error fetching nearby listings:', error);
+        res.status(500).json({ 
+            message: 'Error fetching nearby listings',
+            error: error.message 
+        });
     }
 });
 

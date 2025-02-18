@@ -15,8 +15,21 @@ const listingSchema = new mongoose.Schema({
     latitude: { type: Number, required: true },
     longitude: { type: Number, required: true },
     created_at: { type: Date, default: Date.now },
-    deleted: { type: Boolean, default: false }
+    deleted: { type: Boolean, default: false },
+    location: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            required: true
+        },
+        coordinates: {
+            type: [Number],
+            required: true
+        }
+    }
 });
+
+listingSchema.index({ location: "2dsphere" });
 
 const Listing = mongoose.model('Listing', listingSchema);
 
