@@ -4,7 +4,6 @@ const listingSchema = new mongoose.Schema({
     title: { type: String, required: true },
     seller_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     seller_no: { type: String, required: true },
-    category_id: { type: String },
     price: { type: Number, required: true },
     description: { type: String, required: true },
     cover_image: { type: String, required: true },
@@ -31,7 +30,32 @@ const listingSchema = new mongoose.Schema({
     }
 });
 
+// Create a 2dsphere index for geospatial queries
 listingSchema.index({ location: "2dsphere" });
+
+// Create a text index for text search with field weights
+listingSchema.index({
+    title: 'text',
+    description: 'text',
+    location_display_name: 'text',
+    city: 'text',
+    state: 'text'
+}, {
+    weights: {
+        title: 10,
+        description: 5,
+        location_display_name: 3,
+        city: 2,
+        state: 1
+    },
+    name: "TextSearchIndex"
+});
+
+// Create a compound index for common queries
+listingSchema.index({ 
+    deleted: 1, 
+    created_at: -1 
+});
 
 const Listing = mongoose.model('Listing', listingSchema);
 

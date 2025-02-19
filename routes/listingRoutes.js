@@ -62,7 +62,7 @@ router.get('/listings/:id', async (req, res) => {
         const listing = await Listing.findOne({ 
             _id: req.params.id,
             deleted: { $ne: true }
-        }).populate('seller_id', 'username email');
+        }).populate('seller_id', '-password');
         if (!listing) {
             return res.status(404).json({ message: 'Listing not found' });
         }
@@ -154,12 +154,16 @@ router.put('/listings/:id', authMiddleware, async (req, res) => {
 
 router.get('/search-listings', async (req, res) => {
     try {
-        const { query, latitude, longitude, maxDistance = 50, category, subcategory } = req.query;
+        const { query, latitude, longitude, maxDistance = 50 } = req.query;
         
         if (!query) {
-            return res.status(400).json({ message: 'Search query is required' });
+            return res.status(400).json({ 
+                listings: [],
+                message: 'Search query is required' 
+            });
         }
 
+        // Build the base query
         let searchQuery = {
             deleted: { $ne: true },
             $or: [
@@ -168,64 +172,74 @@ router.get('/search-listings', async (req, res) => {
             ]
         };
 
-        // Add category filter if provided
-        if (category) {
-            searchQuery.category = category;
-        }
-
-        // Add subcategory filter if provided
-        if (subcategory) {
-            searchQuery.subcategory = subcategory;
-        }
-
         // Add location filter if coordinates are provided
         if (latitude && longitude) {
+            const coordinates = [parseFloat(longitude), parseFloat(latitude)];
+            
+            // Validate coordinates
+            if (isNaN(coordinates[0]) || isNaN(coordinates[1])) {
+                return res.status(400).json({
+                    listings: [],
+                    message: 'Invalid coordinates provided'
+                });
+            }
+
             searchQuery.location = {
                 $near: {
                     $geometry: {
                         type: "Point",
-                        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+                        coordinates: coordinates
                     },
                     $maxDistance: parseInt(maxDistance) * 1000 // Convert km to meters
                 }
             };
         }
 
+
+        // Execute search
         const listings = await Listing.find(searchQuery)
             .populate('seller_id', 'username email')
-            .sort({ created_at: -1 });
+            .sort({ created_at: -1 })
+            .limit(50);
 
-        // Calculate distance for each listing if location is provided
-        if (latitude && longitude) {
-            const listingsWithDistance = listings.map(listing => {
-                const coordinates = listing.location.coordinates;
+
+        // Process listings to add distance if location provided
+        const processedListings = listings.map(listing => {
+            const listingObj = listing.toObject();
+
+            if (latitude && longitude) {
+                const [lon2, lat2] = listing.location.coordinates;
                 const distance = calculateDistance(
                     parseFloat(latitude),
                     parseFloat(longitude),
-                    coordinates[1],
-                    coordinates[0]
+                    lat2,
+                    lon2
                 );
-                return {
-                    ...listing.toObject(),
-                    distance: parseFloat(distance.toFixed(2))
-                };
-            });
+                listingObj.distance = parseFloat(distance.toFixed(2));
+            }
 
-            // Sort by distance
-            listingsWithDistance.sort((a, b) => a.distance - b.distance);
-            return res.status(200).json(listingsWithDistance);
-        }
+            return listingObj;
+        });
 
-        res.status(200).json(listings);
+        res.status(200).json({
+            listings: processedListings,
+            total: processedListings.length,
+            message: `Found ${processedListings.length} listings`
+        });
     } catch (error) {
-        console.error('Error searching listings:', error);
-        res.status(500).json({ message: 'Error searching listings' });
+        console.error('Error in search API:', error);
+        res.status(500).json({ 
+            listings: [],
+            total: 0,
+            message: 'Failed to fetch search results',
+            error: error.message
+        });
     }
 });
 
 router.get('/nearby-listings', async (req, res) => {
     try {
-        const { longitude, latitude, maxDistance = 50000 } = req.query; // Default 50km
+        const { longitude, latitude, maxDistance = 50000, category } = req.query;
         
         // Validate presence of coordinates
         if (!longitude || !latitude) {
@@ -247,8 +261,8 @@ router.get('/nearby-listings', async (req, res) => {
             });
         }
 
-        // Find listings within specified radius only
-        const listings = await Listing.find({
+        // Build the query
+        let query = {
             deleted: { $ne: true },
             location: {
                 $near: {
@@ -259,9 +273,24 @@ router.get('/nearby-listings', async (req, res) => {
                     $maxDistance: parsedMaxDistance
                 }
             }
-        })
-        .populate('seller_id', 'username email')
-        .sort({ created_at: -1 });
+        };
+
+        // Add category filter if provided
+        if (category && category !== 'all') {
+            // Search in both category and category fields
+            query.$or = [
+                { category: category },
+                { category: category }
+            ];
+        }
+
+
+        // Find listings within specified radius only
+        const listings = await Listing.find(query)
+            .populate('seller_id', 'username email')
+            .sort({ created_at: -1 });
+
+       
 
         // Calculate accurate distances and filter by max distance
         const listingsWithDistance = listings
@@ -300,9 +329,9 @@ router.get('/nearby-listings', async (req, res) => {
     }
 });
 
-// Helper function to calculate distance between two points (in kilometers)
+// Helper function to calculate distance between two points
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth's radius in km
+    const R = 6371; // Radius of the earth in km
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
     const a = 
@@ -310,7 +339,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
         Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
         Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+    return R * c; // Distance in km
 }
 
 function toRad(value) {
