@@ -4,38 +4,44 @@ const Listing = require('../models/Listing');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 router.post('/create-listing', authMiddleware, async (req, res) => {
-    const { latitude, longitude, ...rest } = req.body;
+    const { title, price, description, phoneNumber, coverImageName, additionalImageNames, category, subcategory, location } = req.body;
     
-    if (!latitude || !longitude) {
+    if (!location?.lat || !location?.lon) {
         return res.status(400).json({ 
-            message: 'Location coordinates are required',
-            details: 'Please ensure location permissions are granted and coordinates are provided'
+            message: 'Location coordinates are required'
         });
     }
 
     try {
         const listing = new Listing({
-            ...rest,
+            title,
+            price,
+            description,
+            seller_no: phoneNumber,
+            cover_image: coverImageName,
+            additional_images: additionalImageNames,
+            category,
+            subcategory,
+            location_display_name: location.display_name,
             location: {
                 type: "Point",
-                coordinates: [parseFloat(longitude), parseFloat(latitude)]
+                coordinates: [parseFloat(location.lon), parseFloat(location.lat)]
             },
             seller_id: req.userId
         });
 
         const savedListing = await listing.save();
-        const populatedListing = await Listing.findById(savedListing._id).populate('seller_id', 'username email');
+        const populatedListing = await Listing.findById(savedListing._id)
+            .populate('seller_id', 'username email');
         
         res.status(200).json({ 
             message: 'Listing created successfully', 
             listing: populatedListing 
         });
     } catch (error) {
-        console.error('Error creating listing:', error);
         res.status(500).json({ 
             message: 'Error creating listing',
-            error: error.message,
-            details: error
+            error: error.message
         });
     }
 });
@@ -110,9 +116,27 @@ router.put('/listings/:id', authMiddleware, async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized to update this listing' });
         }
 
+        const { title, price, description, phoneNumber, coverImageName, additionalImageNames, category, subcategory, location } = req.body;
+
+        const updateData = {
+            title,
+            price,
+            description,
+            seller_no: phoneNumber,
+            cover_image: coverImageName,
+            additional_images: additionalImageNames,
+            category,
+            subcategory,
+            location_display_name: location.display_name,
+            location: {
+                type: "Point",
+                coordinates: [parseFloat(location.lon), parseFloat(location.lat)]
+            }
+        };
+
         const updatedListing = await Listing.findByIdAndUpdate(
             req.params.id,
-            { ...req.body },
+            updateData,
             { new: true }
         ).populate('seller_id', 'username email');
 
@@ -121,27 +145,76 @@ router.put('/listings/:id', authMiddleware, async (req, res) => {
             listing: updatedListing
         });
     } catch (error) {
-        console.error('Error updating listing:', error);
-        res.status(500).json({ message: 'Error updating listing' });
+        res.status(500).json({ 
+            message: 'Error updating listing',
+            error: error.message
+        });
     }
 });
 
 router.get('/search-listings', async (req, res) => {
     try {
-        const { query } = req.query;
+        const { query, latitude, longitude, maxDistance = 50, category, subcategory } = req.query;
+        
         if (!query) {
             return res.status(400).json({ message: 'Search query is required' });
         }
 
-        const listings = await Listing.find({
+        let searchQuery = {
             deleted: { $ne: true },
             $or: [
                 { title: { $regex: query, $options: 'i' } },
                 { description: { $regex: query, $options: 'i' } }
             ]
-        })
-        .populate('seller_id', 'username email')
-        .sort({ created_at: -1 });
+        };
+
+        // Add category filter if provided
+        if (category) {
+            searchQuery.category = category;
+        }
+
+        // Add subcategory filter if provided
+        if (subcategory) {
+            searchQuery.subcategory = subcategory;
+        }
+
+        // Add location filter if coordinates are provided
+        if (latitude && longitude) {
+            searchQuery.location = {
+                $near: {
+                    $geometry: {
+                        type: "Point",
+                        coordinates: [parseFloat(longitude), parseFloat(latitude)]
+                    },
+                    $maxDistance: parseInt(maxDistance) * 1000 // Convert km to meters
+                }
+            };
+        }
+
+        const listings = await Listing.find(searchQuery)
+            .populate('seller_id', 'username email')
+            .sort({ created_at: -1 });
+
+        // Calculate distance for each listing if location is provided
+        if (latitude && longitude) {
+            const listingsWithDistance = listings.map(listing => {
+                const coordinates = listing.location.coordinates;
+                const distance = calculateDistance(
+                    parseFloat(latitude),
+                    parseFloat(longitude),
+                    coordinates[1],
+                    coordinates[0]
+                );
+                return {
+                    ...listing.toObject(),
+                    distance: parseFloat(distance.toFixed(2))
+                };
+            });
+
+            // Sort by distance
+            listingsWithDistance.sort((a, b) => a.distance - b.distance);
+            return res.status(200).json(listingsWithDistance);
+        }
 
         res.status(200).json(listings);
     } catch (error) {
@@ -151,7 +224,7 @@ router.get('/search-listings', async (req, res) => {
 });
 
 router.get('/nearby-listings', async (req, res) => {
-    const { longitude, latitude, maxDistance = 15000 } = req.query; // Default 15km
+    const { longitude, latitude, maxDistance = 1000000000 } = req.query; // Default 100km
     
     if (!longitude || !latitude) {
         return res.status(400).json({ 
@@ -178,7 +251,26 @@ router.get('/nearby-listings', async (req, res) => {
         })
         .populate('seller_id', 'username email')
         .sort({ created_at: -1 });
-        res.status(200).json(listings);
+
+        // Calculate distance for each listing with 2 decimal places
+        const listingsWithDistance = listings.map(listing => {
+            const coordinates = listing.location.coordinates;
+            const distance = calculateDistance(
+                parseFloat(latitude),
+                parseFloat(longitude),
+                coordinates[1],
+                coordinates[0]
+            );
+            return {
+                ...listing.toObject(),
+                distance: parseFloat(distance.toFixed(2)) // Convert to float with 2 decimal places
+            };
+        });
+
+        // Sort by distance
+        listingsWithDistance.sort((a, b) => a.distance - b.distance);
+
+        res.status(200).json(listingsWithDistance);
     } catch (error) {
         console.error('Error fetching nearby listings:', error);
         res.status(500).json({ 
@@ -187,6 +279,23 @@ router.get('/nearby-listings', async (req, res) => {
         });
     }
 });
+
+// Helper function to calculate distance between two points
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+function toRad(value) {
+    return value * Math.PI / 180;
+}
 
 module.exports = router;
 
