@@ -224,63 +224,83 @@ router.get('/search-listings', async (req, res) => {
 });
 
 router.get('/nearby-listings', async (req, res) => {
-    const { longitude, latitude, maxDistance = 1000000000 } = req.query; // Default 100km
-    
-    if (!longitude || !latitude) {
-        return res.status(400).json({ 
-            message: 'Longitude and latitude are required',
-            example: '/nearby-listings?longitude=76.8433&latitude=23.0719'
-        });
-    }
-
     try {
+        const { longitude, latitude, maxDistance = 50000 } = req.query; // Default 50km
+        
+        // Validate presence of coordinates
+        if (!longitude || !latitude) {
+            return res.status(400).json({ 
+                listings: [],
+                message: 'Longitude and latitude are required'
+            });
+        }
+
+        // Parse and validate coordinates
+        const parsedLon = parseFloat(longitude);
+        const parsedLat = parseFloat(latitude);
+        const parsedMaxDistance = parseInt(maxDistance);
+
+        if (isNaN(parsedLon) || isNaN(parsedLat)) {
+            return res.status(400).json({ 
+                listings: [],
+                message: 'Invalid coordinates format'
+            });
+        }
+
+        // Find listings within specified radius only
         const listings = await Listing.find({
             deleted: { $ne: true },
             location: {
                 $near: {
                     $geometry: {
                         type: "Point",
-                        coordinates: [
-                            parseFloat(longitude),
-                            parseFloat(latitude)
-                        ]
+                        coordinates: [parsedLon, parsedLat]
                     },
-                    $maxDistance: parseInt(maxDistance)
+                    $maxDistance: parsedMaxDistance
                 }
             }
         })
         .populate('seller_id', 'username email')
         .sort({ created_at: -1 });
 
-        // Calculate distance for each listing with 2 decimal places
-        const listingsWithDistance = listings.map(listing => {
-            const coordinates = listing.location.coordinates;
-            const distance = calculateDistance(
-                parseFloat(latitude),
-                parseFloat(longitude),
-                coordinates[1],
-                coordinates[0]
-            );
-            return {
-                ...listing.toObject(),
-                distance: parseFloat(distance.toFixed(2)) // Convert to float with 2 decimal places
-            };
+        // Calculate accurate distances and filter by max distance
+        const listingsWithDistance = listings
+            .map(listing => {
+                const coordinates = listing.location.coordinates;
+                const distance = calculateDistance(
+                    parsedLat,
+                    parsedLon,
+                    coordinates[1],
+                    coordinates[0]
+                );
+                
+                return {
+                    ...listing.toObject(),
+                    distance: parseFloat(distance.toFixed(2))
+                };
+            })
+            .filter(listing => listing.distance <= (parsedMaxDistance / 1000)) // Convert meters to km
+            .sort((a, b) => a.distance - b.distance);
+
+        // Return response with consistent format
+        return res.status(200).json({
+            listings: listingsWithDistance,
+            message: listingsWithDistance.length > 0 
+                ? `Found ${listingsWithDistance.length} listings within ${parsedMaxDistance/1000}km`
+                : `No listings found within ${parsedMaxDistance/1000}km of your location`
         });
 
-        // Sort by distance
-        listingsWithDistance.sort((a, b) => a.distance - b.distance);
-
-        res.status(200).json(listingsWithDistance);
     } catch (error) {
-        console.error('Error fetching nearby listings:', error);
+        console.error('Error in nearby-listings:', error);
         res.status(500).json({ 
-            message: 'Error fetching nearby listings',
-            error: error.message 
+            listings: [],
+            message: 'Unable to fetch listings at this time. Please try again later.',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
 
-// Helper function to calculate distance between two points
+// Helper function to calculate distance between two points (in kilometers)
 function calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // Earth's radius in km
     const dLat = toRad(lat2 - lat1);
