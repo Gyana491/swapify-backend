@@ -3,6 +3,8 @@ const express = require('express');
 const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const listingRoutes = require('./routes/listingRoutes');
+const aadharRoutes = require('./routes/aadharRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 const cors = require('cors');
 
 
@@ -21,6 +23,8 @@ app.use(express.json());
 
 app.use(authRoutes);
 app.use(listingRoutes);
+app.use('/api/aadhar', aadharRoutes);
+app.use('/api', chatRoutes);
 
 
 const PORT = process.env.PORT || 5000;
