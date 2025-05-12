@@ -1,13 +1,15 @@
 const nodemailer = require('nodemailer');
+const dotenv = require('dotenv');
 
+dotenv.config();
 // Configure Nodemailer with Zoho Mail
 const transporter = nodemailer.createTransport({
   host: 'smtp.zoho.in',
   port: 465,
   secure: true, 
   auth: {
-    user: 'no-reply@swapify.club',
-    pass: 'Amitkumar1234!'
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
