@@ -30,7 +30,9 @@ const userSchema = new mongoose.Schema({
     full_name: { type: String },
     nickname: { type: String },
     family_name: { type: String },
-});
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date }
+}, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
 
